@@ -1,0 +1,396 @@
+<% include user_header.html %>
+
+<script type="text/javascript">
+window.history.forward();
+    function isNumberKey(evt){
+        var charCode = (evt.which) ? evt.which : event.keyCode
+        if (charCode > 31 && (charCode < 48 || charCode > 57))
+            return false;
+        return true;
+    }
+    
+    $(document).ready(function() {
+
+        $('.close').click(function(event){
+            console.log('close')
+            $('#modal_add_new_card').modal('hide');
+        });
+
+        $('.close1').click(function(event){
+            console.log('close')
+            $('#modal_add_wallet').modal('hide');
+        });
+
+        $('#Card_number').keyup(function(event) {
+
+            var Card_number = $('#Card_number').val();
+      document.getElementById('Card_number').addEventListener('input', function (e) {
+        e.target.value = e.target.value.replace(/[^\dA-Z]/g, '').replace(/(.{4})/g, '$1 ').trim();
+            });
+
+      if(Card_number.length == 2)
+            {
+
+                $.ajax({
+                    type       : 'POST', // define the type of HTTP verb we want to use (POST for our form)
+                    url         : '/card_type', // the url where we want to POST  
+                    data        :'Card_number='+Card_number, // our data object
+                   datatype    :"json",
+                   success:function(response){ 
+                        $('#cvv').val('');
+                        $('#cvv').attr("maxlength",response.code.size )  
+                        document.getElementById('card_type').value=response.type;
+                        $("#image").append("<img src='' style='position:absolute; margin-top:-20px;'/>");         
+                    }
+                })
+            }
+        });
+        $('#modal_card').click(function(event){
+
+            $('#Card_number').val('');
+            $('#Exp_month').val('');
+            $('#Exp_year').val('');
+            $('#cvv').val('');
+            $('.payment-errors').text('');
+        });
+    });
+
+    
+
+    function movetoNext(current, nextFieldID) {
+        if (current.value.length >= current.maxLength) {
+        document.getElementById(nextFieldID).focus();
+        }
+    }
+</script>
+<script type="text/javascript" src="https://js.stripe.com/v3/"></script>
+<script type="text/javascript">
+    
+    // Stripe('<%= stripe_public_key %>');
+    var stripe = Stripe('<%= stripe_public_key %>');
+    var elements = stripe.elements();
+    var cardElement = elements.create('card');
+    
+
+    function open_add_card_modal(){
+        cardElement.mount('#card-element');
+        $('#modal_add_new_card').modal('show');
+    }
+
+    $(function() {
+        var $form = $('#payment-form');
+        $form.submit(function(event) {
+            event.preventDefault();
+            $.ajax({
+                type       : 'POST', // define the type of HTTP verb we want to use (POST for our form)
+                url         : '/get_stripe_add_card_intent', // the url where we want to POST  
+                data        : {}, // our data object
+                datatype    :"json",
+                success:function(response){
+                    console.log(response)
+                    stripe.handleCardSetup(
+                      response.client_secret, cardElement, {
+                        payment_method_data: {
+                          billing_details: {
+                            name: 'test'
+                          }
+                        }
+                      }
+                    ).then((result)=> {
+                        console.log(result)
+                      if (result.error) {
+                        $form.find('.payment-errors').text(result.error.message);
+                      } else {
+                        $form.append($('<input type="hidden" name="payment_method">').val(result.setupIntent.payment_method));
+                        $form.get(0).submit();
+                        $('#modal_add_new_card').modal('hide');
+                      }
+                    });
+                }
+            });
+        });
+
+        $('#user_add_wallet_amount').submit(function(event){
+            event.preventDefault();
+            console.log($('#amount').val())
+            $.ajax({
+                type       : 'POST', // define the type of HTTP verb we want to use (POST for our form)
+                url         : '/get_stripe_payment_intent', // the url where we want to POST  
+                data        : {amount: $('#amount').val(), type: 10, user_id: '<%=user_id%>'}, // our data object
+                datatype    :"json",
+                success:function(response_data){
+                    console.log(response_data)
+                    if(response_data.success){
+                        stripe.confirmCardPayment(
+                            response_data.client_secret, {
+                                payment_method: response_data.payment_method
+                            }
+                        ).then((result)=> {
+                            console.log(result)
+                            if(result.paymentIntent){
+                                $('#user_add_wallet_amount').append($('<input type="hidden" name="payment_intent_id">').val(result.paymentIntent.id));
+                                $('#user_add_wallet_amount').get(0).submit();
+                            } else {
+                                $('#user_add_wallet_amount').find('.payment-errors').text(result.error.message);
+                            }
+                        });
+                    } else {
+                        $('#user_add_wallet_amount').find('.payment-errors').text('Add Card First');
+                    }
+                }
+            });
+        })
+    });
+
+    function stripeResponseHandler(status, response) {
+         
+        var $form = $('#payment-form');
+        if (response.error) { 
+
+            $form.find('.payment-errors').text(response.error.message);
+            $form.find('.submit').prop('disabled', false); // Re-enable submission
+            $('#modal-dismiss').show();
+        } 
+        else { 
+            var token = response.id;
+            last_four = response.card.last4;
+            
+            $form.append($('<input type="hidden" name="payment_token">').val(token));
+            $form.append($('<input type="hidden" name="last_four">').val(last_four));
+            $form.get(0).submit();
+            $('#modal_change_password').modal('hide');
+        }
+    };
+    
+
+        
+</script>
+<style>
+  .btn-default {
+    width:100%; 
+    font-family: 'RobotoRegular';font-size: 15px;background-color: #047f8f;border-color: #047f8f;float: left;color:#fff;
+  }
+  .btn-default:hover{
+    background-color: #1a1d2e;
+    border-color: #1a1d2e;
+    color: #fff;
+    border-radius: 0;
+
+  }
+</style>
+<% if(typeof message != 'undefined'){ %>
+       <div class="alert alert-success" role="alert" style="padding-top: 75px;margin-bottom: -135px;">
+          <button type="button" class="close" data-dismiss="alert"><span aria-hidden="true">&times;</span><span class="sr-only"><%= __('button_close') %></span></button>
+          <p align="center"> <strong><%= __(message) %></strong></p>
+      </div>
+    <% } %> 
+<div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 box_selet_bg">
+        <div class="row">
+            <!--profile_user_section-->
+            <div class="des_hied">
+                <div class="pro_use_bg">
+                    <div class="pro_use">
+                        <img src="user_panel/images/profile_img.png">
+                    </div>
+
+                    <div class="pro_head"><h4>John Leo</h4></div>
+                </div>
+            </div>
+            <div class="col-lg-5 col-md-5 col-sm-5 col-xs-12 pro_lft1">
+                <div class="row">
+                    <div class="col-12 col-md-12 col-sm-12 col-xs-12">
+                        <div class="box_selet_lft">
+                            <div class="box_sele_head">
+                                <h5><%= __('title_wallet') %></h5>
+                                <a href="" data-toggle="modal" type="button" id="modal_card" data-target="#modal_add_wallet"  class="fa fa-plus-circle pull-right" style="font-size: 30px;cursor: pointer;color: black;"></a>
+                            </div>        
+                            <div class="box_sele_top">
+                                <div class="box_label"><label><%= __('balance') %></label></div>
+                               <div class="box_label"><label><%= (user_detail.wallet).toFixed(2) %>  <%= user_detail.wallet_currency_code %></label></div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+               <div class="box_sele_head"></div>
+                <div class="row">
+                     <div class="col-12 col-md-12 col-sm-12 col-xs-12">
+                        <div class="box_selet_lft">
+                            <div class="box_sele_head">
+                                <h5><%= __('title_selected_card') %></h5>
+                                 <a href="" data-toggle="modal" type="button" id="modal_card" onclick="open_add_card_modal()" class="fa fa-plus-circle pull-right" style="font-size: 30px;cursor: pointer;color: black;"></a>
+                          
+
+                            </div>
+
+                            <div class="box_sele_cont">
+                              <% if(Selected_card != "") { %>
+                                <% Selected_card.forEach(function(data , index){ %>
+                                    <div class="box_sele_top">
+                                  
+                                      <div class="box_label"><label><%= __('title_card_number') %></label></div>
+                                      <div class="box_label"><label>* * * * * * * * <%= data.last_four %></label></div>
+                                        <div class="box_label">
+                                        <img src="user_panel/images/select_tru.png" style="height:25px;width:25px;margin-left:60px;">
+
+                                        <span class="fa fa-times-circle-o pull-right" onclick="remove_card('<%= data._id %>')" style="font-size: 30px;cursor: pointer;color: black;"></span>
+
+
+                                    </div>  
+                                     
+                                    </div>
+                                    <% }); %>
+                                  <% } %>
+                                  <% if(Selected_card != "") { %>
+                                    <% Other_card.forEach(function(data , index){ %>
+                                    <div class="box_sele_top" onclick="select_card('<%= data._id %>')">
+                                    <div class="box_label"><label><%= __('title_card_number') %></label></div>
+                                      <div class="box_label"><label>* * * * * * * * <%= data.last_four %></label></div>
+                                       <div class="box_label">
+                                        <span class="fa fa-times-circle-o pull-right" onclick="remove_card('<%= data._id %>')" style="font-size: 30px;cursor: pointer;color: black;"></span>
+
+                                    </div> 
+                                    </div>
+                                    <% }); %>
+                                  <% } %>
+                                
+
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7 col-md-7 col-sm-7 col-xs-12 pro_lft1">
+             <div class="row">
+                     <div class="col-12 col-md-12 col-sm-12 col-xs-12">
+                        <div class="box_selet_lft">
+                            <div class="box_sele_head">
+                                 <h5><%= __('sub_menu_title_wallet_history') %></h5>
+                            </div>
+                            <div class="">
+                                <div class="">
+                                    <div class="table">
+                                        <div class="table_top">
+                                            <div class="table_id Pickup" style="width: 8%;"><%= __('title_date') %></div>
+
+                                            
+                                            <div class="table_id Pickup" style="width: 10%;"><%= __('title_wallet_amount') %></div>
+                                            <div class="table_id Pickup" style="width: 8%;"><%= __('title_add_cut') %></div>
+                                            <div class="table_id Pickup" style="width: 8%;"><%= __('title_wallet') %></div>
+                                            <div class="table_id Pickup" style="width: 8%;"><%= __('title_wallet_description') %></div>
+
+                                        </div>
+                                        <% wallet_history.forEach(function(data , index){ %>
+                                        <div class="table_top table_cont">
+                                            <div class="table_id"  style="width: 8%;"><%= moment(data.created_at).tz(timezone_for_display_date).format("DD MMM 'YY") %></div>
+                                           
+                                            <div class="table_id"  style="width: 10%;"><%= data.wallet_amount %></div>
+                                            <div class="table_id"  style="width: 8%;"><%= data.added_wallet %></div>
+                                            <div class="table_id"  style="width: 8%;"><%= data.total_wallet_amount %> <%= user_detail.wallet_currency_code %></div>
+                                            <div class="table_id"  style="width: 8%;"><%= data.wallet_description %></div>
+
+                                        </div>
+                                        <% }); %>
+
+
+                                    </div>
+                                </div>
+                            </div>
+                            
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>       
+
+    </div>
+   
+
+
+ <div class="modal animated fadeIn" data-backdrop="static" data-keyboard="false" id="modal_add_wallet" tabindex="-1" role="dialog" aria-labelledby="smallModalHead" aria-hidden="true">
+    <div class="modal-dialog modal-sm" style="z-index:9999;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" id='modal-dismiss' class="close close1" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only"><%= __('button_close') %></span></button>
+                <h4 class="modal-title" id="smallModalHead"><%= __('title_add_wallet') %></h4>
+            </div>
+            <form action="/user_add_wallet_amount" id="user_add_wallet_amount"  method="post">
+                <% if(Selected_card != "") { %>
+                <% Selected_card.forEach(function(data_new){ %>
+                <input type="hidden" name="card_id" value="<%= data_new._id %>"/>
+                <% }); %>
+                <% } %>
+                 <input type="hidden" name="type" value="10"/>
+                 <input type="hidden" name="user_id" value="<%= user_id %>">
+                
+
+                <div class="modal-body form-horizontal">                        
+                    <div class="form-group">
+                        <div class="col-md-12" >
+                            <input type="text"  placeholder="<%= __('title_amount') %>" onkeypress="return isNumberKey(event)" maxlength="19" data-stripe="number"  class="form-control" id="amount" autocomplete="off"  name="wallet"/>
+                        </div>
+                    </div>
+
+                      
+                </div>
+                <span class="payment-errors" style="margin: 15px;"></span>
+                <div class="modal-footer">
+                    <input type="submit" class="submit btn btn-info" value="<%= __('button_submit') %>" />
+                </div>
+            </form>
+        </div>
+    </div>
+</div>   
+<div class="modal animated fadeIn" data-backdrop="static" data-keyboard="false" id="modal_add_new_card" tabindex="-1" role="dialog" aria-labelledby="smallModalHead" aria-hidden="true">
+    <div class="modal-dialog modal-sm" style="z-index:9999;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" id='modal-dismiss' class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only"><%= __('button_close') %></span></button>
+                <h4 class="modal-title" id="smallModalHead"><%= __('title_add_card') %></h4>
+            </div>
+            <form action="/add_card" id="payment-form" method="post">
+                <input type="hidden" name="type" value="10"/>
+                
+
+                <div class="modal-body form-horizontal">   
+                    <div class="carddetail" id="carddetail" style="width: 100%;max-width: 1000px;">
+                        <div id="card-element"></div>
+                        
+                    </div>         
+                </div>
+                <span class="payment-errors" style="margin: 15px;"></span>
+                <div class="modal-footer">
+                    <input type="submit" class="submit btn btn-info" value="<%= __('button_submit') %>" />
+                    
+                </div>
+            </form>
+        </div>
+    </div>
+</div> 
+    <script type="text/javascript">
+function remove_card(card_id) {
+      $.ajax({
+          type: 'POST',
+          url: 'delete_user_card',
+          data: {'card_id': card_id, 'is_default': 1},
+          dataType: "json",
+          success: function (res) {
+              location.reload();
+          }
+      });
+  }
+  function select_card(card_id) {
+      $.ajax({
+          type: 'POST',
+          url: 'user_card_selection',
+          data: {'card_id': card_id},
+          dataType: "json",
+          success: function (res) {
+              location.reload();
+          }
+      });
+  }
+</script> 
+<% include user_footer.html %>
